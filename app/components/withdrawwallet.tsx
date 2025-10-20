@@ -1,8 +1,15 @@
 "use client";
 
 import React, { useState, MouseEvent, useEffect } from "react";
-import { validateStacksAddress } from "@stacks/transactions";
+import {
+  validateStacksAddress,
+  makeStandardSTXPostCondition,
+  FungibleConditionCode,
+  Cl,
+} from "@stacks/transactions";
 import { ArrowUpRight } from "lucide-react";
+import { request } from "@stacks/connect";
+import { useWallet } from "@/app/providers";
 
 interface WithdrawSTXProps {
   stxPubKey: string;
@@ -10,6 +17,7 @@ interface WithdrawSTXProps {
 }
 
 export default function WithdrawSTX({ stxPubKey, balance }: WithdrawSTXProps) {
+  const { userAddress } = useWallet();
   const [withdrawAddress, setWithdrawAddress] = useState("");
   const [amount, setAmount] = useState<number>(0);
   const [withdrawing, setWithdrawing] = useState(false);
@@ -21,6 +29,10 @@ export default function WithdrawSTX({ stxPubKey, balance }: WithdrawSTXProps) {
   const handleWithdrawStacks = async (e: MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
     setToast(null);
+
+    if (!userAddress) {
+      return setToast({ type: "error", message: "Wallet not connected" });
+    }
 
     if (!withdrawAddress || amount <= 0) {
       return setToast({
@@ -41,21 +53,29 @@ export default function WithdrawSTX({ stxPubKey, balance }: WithdrawSTXProps) {
     try {
       setWithdrawing(true);
 
-      const res = await fetch("/api/withdraw", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          recipient: withdrawAddress,
-          amount: amountMicro.toString(),
-          pubKey: stxPubKey,
-        }),
+      // Create post condition to ensure exact amount is transferred
+      const postCondition = makeStandardSTXPostCondition(
+        userAddress,
+        FungibleConditionCode.Equal,
+        amountMicro
+      );
+
+      const result = await request("stx_transferTokens", {
+        recipient: withdrawAddress,
+        amount: amountMicro.toString(),
+        address: userAddress,
+        network: "testnet",
+        postConditions: [postCondition],
       });
 
-      const data: { error?: string } = await res.json();
+      const txId = (result as any)?.txid || (result as any)?.transaction;
 
-      if (!res.ok) throw new Error(data.error || "Transaction failed");
-
-      setToast({ type: "success", message: "Transaction sent!" });
+      setToast({
+        type: "success",
+        message: `Transaction sent! ${
+          txId ? `TxID: ${txId.slice(0, 8)}...` : ""
+        }`,
+      });
       setWithdrawAddress("");
       setAmount(0);
     } catch (err) {

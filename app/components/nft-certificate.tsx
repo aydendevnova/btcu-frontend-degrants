@@ -2,18 +2,17 @@
 
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { useTurnkey } from "@turnkey/react-wallet-kit";
-import { publicKeyToAddress, principalCV } from "@stacks/transactions";
+import { useWallet } from "@/app/providers";
+import { principalCV } from "@stacks/transactions";
 import { Award, Sparkles } from "lucide-react";
 import {
-  signAndBroadcastContractCall,
+  callContract,
   CONTRACTS,
+  CONTRACT_NAMES,
 } from "@/app/lib/stacks-client-utils";
 
 export default function NFTCertificate() {
-  const { wallets, httpClient } = useTurnkey();
-  const [stxAddress, setStxAddress] = useState("");
-  const [stxPubKey, setStxPubKey] = useState("");
+  const { userAddress } = useWallet();
   const [minting, setMinting] = useState(false);
   const [minted, setMinted] = useState(false);
   const [toast, setToast] = useState<{
@@ -21,43 +20,21 @@ export default function NFTCertificate() {
     message: string;
   } | null>(null);
 
-  // Get STX wallet address and public key
-  useEffect(() => {
-    const account = wallets?.[0]?.accounts?.[0];
-    const pubKey = account?.publicKey;
-
-    if (pubKey) {
-      setStxPubKey(pubKey);
-      try {
-        const address = publicKeyToAddress(pubKey, "testnet");
-        setStxAddress(address);
-      } catch (err) {
-        console.error(err);
-      }
-    }
-  }, [wallets]);
-
   const handleMintCertificate = async () => {
-    if (!stxPubKey || !stxAddress || !httpClient) {
+    if (!userAddress) {
       setToast({ type: "error", message: "Wallet not connected" });
       return;
     }
 
     setMinting(true);
     try {
-      console.log("Minting NFT with client-side signing...");
-
-      const txId = await signAndBroadcastContractCall(
-        {
-          contractAddress: CONTRACTS.BTCUNI_NFT,
-          contractName: "btcuniNft",
-          functionName: "mint",
-          functionArgs: [principalCV(stxAddress)],
-          senderAddress: stxAddress,
-          senderPubKey: stxPubKey,
-        },
-        httpClient
-      );
+      const txId = await callContract({
+        contractAddress: CONTRACTS.BTCUNI_NFT,
+        contractName: CONTRACT_NAMES.BTCUNI_NFT,
+        functionName: "mint",
+        functionArgs: [principalCV(userAddress)],
+        userAddress,
+      });
 
       setToast({
         type: "success",
@@ -127,8 +104,8 @@ export default function NFTCertificate() {
           </h3>
           <p className="text-gray-700 mb-2">
             <span className="font-semibold">Recipient:</span>{" "}
-            {stxAddress
-              ? `${stxAddress.slice(0, 8)}...${stxAddress.slice(-6)}`
+            {userAddress
+              ? `${userAddress.slice(0, 8)}...${userAddress.slice(-6)}`
               : "Connect wallet"}
           </p>
           <p className="text-gray-700 mb-8">
@@ -149,7 +126,7 @@ export default function NFTCertificate() {
           ) : (
             <button
               onClick={handleMintCertificate}
-              disabled={minting || !stxPubKey}
+              disabled={minting || !userAddress}
               className="px-12 py-4 bg-gradient-to-r from-orange-500 to-yellow-400 text-white text-lg font-bold rounded-2xl hover:shadow-lg transition-all disabled:opacity-50"
             >
               {minting ? "Minting..." : "Mint Certificate NFT"}

@@ -2,8 +2,8 @@
 
 import React, { useState, useEffect } from "react";
 import { useRouter, useParams } from "next/navigation";
-import { useTurnkey } from "@turnkey/react-wallet-kit";
-import { publicKeyToAddress, uintCV } from "@stacks/transactions";
+import { useWallet } from "@/app/providers";
+import { uintCV } from "@stacks/transactions";
 import { motion } from "framer-motion";
 import {
   ArrowLeft,
@@ -17,9 +17,12 @@ import {
   Users,
 } from "lucide-react";
 import {
-  signAndBroadcastContractCall,
+  callContract,
+  readContract,
   CONTRACTS,
+  CONTRACT_NAMES,
 } from "@/app/lib/stacks-client-utils";
+import { Cl } from "@stacks/transactions";
 
 const COURSES_DATA = {
   1: {
@@ -239,10 +242,8 @@ export default function CoursePage() {
   const router = useRouter();
   const params = useParams();
   const courseId = parseInt(params.id as string);
-  const { wallets, httpClient } = useTurnkey();
+  const { userAddress } = useWallet();
 
-  const [stxAddress, setStxAddress] = useState("");
-  const [stxPubKey, setStxPubKey] = useState("");
   const [isEnrolled, setIsEnrolled] = useState(false);
   const [isWhitelisted, setIsWhitelisted] = useState(false);
   const [enrolling, setEnrolling] = useState(false);
@@ -256,47 +257,35 @@ export default function CoursePage() {
 
   const course = COURSES_DATA[courseId as keyof typeof COURSES_DATA];
 
-  // Get STX wallet address
-  useEffect(() => {
-    const account = wallets?.[0]?.accounts?.[0];
-    const pubKey = account?.publicKey;
-
-    if (pubKey) {
-      setStxPubKey(pubKey);
-      try {
-        const address = publicKeyToAddress(pubKey, "testnet");
-        setStxAddress(address);
-      } catch (err) {
-        console.error(err);
-      }
-    }
-  }, [wallets]);
-
   // Check enrollment status
   useEffect(() => {
-    if (!stxAddress) return;
+    if (!userAddress) return;
 
     const checkStatus = async () => {
       try {
-        const whitelistRes = await fetch("/api/contract/check-whitelist", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ address: stxAddress }),
+        const whitelistResult = await readContract({
+          contractAddress: CONTRACTS.BTCUNI_MAIN,
+          contractName: CONTRACT_NAMES.BTCUNI_MAIN,
+          functionName: "is-whitelisted-beta",
+          functionArgs: [Cl.principal(userAddress)],
+          senderAddress: userAddress,
         });
-        const whitelistData = await whitelistRes.json();
-        if (whitelistData.success) {
-          setIsWhitelisted(whitelistData.isWhitelisted);
-        }
 
-        if (whitelistData.isWhitelisted) {
-          const enrollRes = await fetch("/api/contract/get-enrolled-ids", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ address: stxAddress }),
+        const isWhiteListed = whitelistResult?.value === true;
+        setIsWhitelisted(isWhiteListed);
+
+        if (isWhiteListed) {
+          const enrollResult = await readContract({
+            contractAddress: CONTRACTS.BTCUNI_MAIN,
+            contractName: CONTRACT_NAMES.BTCUNI_MAIN,
+            functionName: "get-enrolled-ids",
+            functionArgs: [Cl.principal(userAddress)],
+            senderAddress: userAddress,
           });
-          const enrollData = await enrollRes.json();
-          if (enrollData.success && enrollData.enrolledIds) {
-            setIsEnrolled(enrollData.enrolledIds.includes(courseId));
+
+          if (enrollResult?.value && Array.isArray(enrollResult.value)) {
+            const enrolledIds = enrollResult.value.map((id: any) => Number(id));
+            setIsEnrolled(enrolledIds.includes(courseId));
           }
         }
       } catch (err) {
@@ -305,10 +294,10 @@ export default function CoursePage() {
     };
 
     checkStatus();
-  }, [stxAddress, courseId]);
+  }, [userAddress, courseId]);
 
   const handleEnrollCourse = async () => {
-    if (!stxPubKey || !stxAddress || !httpClient) {
+    if (!userAddress) {
       setToast({ type: "error", message: "Wallet not connected" });
       return;
     }
@@ -320,17 +309,13 @@ export default function CoursePage() {
 
     setEnrolling(true);
     try {
-      const txId = await signAndBroadcastContractCall(
-        {
-          contractAddress: CONTRACTS.BTCUNI_MAIN,
-          contractName: "btcuni",
-          functionName: "enroll-course",
-          functionArgs: [uintCV(courseId)],
-          senderAddress: stxAddress,
-          senderPubKey: stxPubKey,
-        },
-        httpClient
-      );
+      const txId = await callContract({
+        contractAddress: CONTRACTS.BTCUNI_MAIN,
+        contractName: CONTRACT_NAMES.BTCUNI_MAIN,
+        functionName: "enroll-course",
+        functionArgs: [uintCV(courseId)],
+        userAddress,
+      });
 
       setToast({
         type: "success",

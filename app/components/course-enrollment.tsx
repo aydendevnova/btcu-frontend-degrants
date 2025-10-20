@@ -2,13 +2,16 @@
 
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { useTurnkey } from "@turnkey/react-wallet-kit";
-import { publicKeyToAddress, uintCV } from "@stacks/transactions";
-import { CheckCircle, Circle, Lock, Trophy } from "lucide-react";
+import { useWallet } from "@/app/providers";
+import { uintCV } from "@stacks/transactions";
+import { CheckCircle, Lock, Trophy } from "lucide-react";
 import {
-  signAndBroadcastContractCall,
+  callContract,
+  readContract,
   CONTRACTS,
+  CONTRACT_NAMES,
 } from "@/app/lib/stacks-client-utils";
+import { Cl } from "@stacks/transactions";
 
 interface Course {
   id: number;
@@ -68,9 +71,7 @@ interface CourseEnrollmentProps {
 export default function CourseEnrollment({
   onEnrollmentComplete,
 }: CourseEnrollmentProps) {
-  const { wallets, httpClient } = useTurnkey();
-  const [stxAddress, setStxAddress] = useState("");
-  const [stxPubKey, setStxPubKey] = useState("");
+  const { userAddress } = useWallet();
   const [isWhitelisted, setIsWhitelisted] = useState(false);
   const [checkingWhitelist, setCheckingWhitelist] = useState(false);
   const [enrollingWhitelist, setEnrollingWhitelist] = useState(false);
@@ -78,47 +79,27 @@ export default function CourseEnrollment({
   const [enrolledCourses, setEnrolledCourses] = useState<Set<number>>(
     new Set()
   );
-  const [checkingEnrollments, setCheckingEnrollments] = useState(false);
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [toast, setToast] = useState<{
     type: "success" | "error";
     message: string;
   } | null>(null);
 
-  // Get STX wallet address and public key
-  useEffect(() => {
-    const account = wallets?.[0]?.accounts?.[0];
-    const pubKey = account?.publicKey;
-
-    if (pubKey) {
-      setStxPubKey(pubKey);
-      try {
-        const address = publicKeyToAddress(pubKey, "testnet");
-        setStxAddress(address);
-      } catch (err) {
-        console.error(err);
-      }
-    }
-  }, [wallets]);
-
   // Check whitelist status
   useEffect(() => {
-    if (!stxAddress) return;
+    if (!userAddress) return;
 
     const checkWhitelist = async () => {
       setCheckingWhitelist(true);
       try {
-        const res = await fetch("/api/contract/check-whitelist", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ address: stxAddress }),
+        const result = await readContract({
+          contractAddress: CONTRACTS.BTCUNI_MAIN,
+          contractName: CONTRACT_NAMES.BTCUNI_MAIN,
+          functionName: "is-whitelisted-beta",
+          functionArgs: [Cl.principal(userAddress)],
+          senderAddress: userAddress,
         });
-        const data = await res.json();
-        console.log("data", JSON.stringify(data, null, 2));
-        if (data.success) {
-          console.log("data.isWhitelisted", data.isWhitelisted);
-          setIsWhitelisted(data.isWhitelisted);
-        }
+        setIsWhitelisted(result?.value === true);
       } catch (err) {
         console.error("Failed to check whitelist:", err);
       } finally {
@@ -127,78 +108,53 @@ export default function CourseEnrollment({
     };
 
     checkWhitelist();
-  }, [stxAddress]);
+  }, [userAddress]);
 
-  // Check enrollment status for all courses using batch API
+  // Check enrollment status for all courses
   useEffect(() => {
     const checkEnrollments = async () => {
-      if (!stxAddress) return;
+      if (!userAddress) return;
 
-      console.log("🔍 Fetching enrolled course IDs for address:", stxAddress);
-      setCheckingEnrollments(true);
       try {
-        const res = await fetch("/api/contract/get-enrolled-ids", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ address: stxAddress }),
+        const result = await readContract({
+          contractAddress: CONTRACTS.BTCUNI_MAIN,
+          contractName: CONTRACT_NAMES.BTCUNI_MAIN,
+          functionName: "get-enrolled-ids",
+          functionArgs: [Cl.principal(userAddress)],
+          senderAddress: userAddress,
         });
 
-        const data = await res.json();
-        console.log("📊 Enrolled IDs response:", data);
-
-        if (data.success && data.enrolledIds) {
-          const enrolled = new Set<number>(data.enrolledIds);
-          console.log("✅ Enrolled courses:", Array.from(enrolled));
+        if (result?.value && Array.isArray(result.value)) {
+          const enrolled = new Set<number>(
+            result.value.map((id: any) => Number(id))
+          );
           setEnrolledCourses(enrolled);
         }
       } catch (err) {
         console.error("Enrollment check failed:", err);
-      } finally {
-        setCheckingEnrollments(false);
       }
     };
 
     if (isWhitelisted) {
       checkEnrollments();
     }
-  }, [stxAddress, isWhitelisted]);
+  }, [userAddress, isWhitelisted]);
 
   const handleEnrollWhitelist = async () => {
-    if (!stxPubKey || !stxAddress || !httpClient) {
+    if (!userAddress) {
       setToast({ type: "error", message: "Wallet not connected" });
       return;
     }
 
     setEnrollingWhitelist(true);
     try {
-      console.log("=== WHITELIST ENROLLMENT DEBUG ===");
-      console.log("Sender Address (tx-sender):", stxAddress);
-      console.log("Public Key:", stxPubKey);
-      console.log(
-        "Expected address with sBTC:",
-        "STFWX0GCAVN8WDTV9ZHGB8MKYT1RN0A2JDWM19MR"
-      );
-      console.log(
-        "Addresses match?",
-        stxAddress === "STFWX0GCAVN8WDTV9ZHGB8MKYT1RN0A2JDWM19MR"
-      );
-
-      const txId = await signAndBroadcastContractCall(
-        {
-          contractAddress: CONTRACTS.BTCUNI_MAIN,
-          contractName: "btcuni",
-          functionName: "enroll-whitelist",
-          functionArgs: [],
-          senderAddress: stxAddress,
-          senderPubKey: stxPubKey,
-        },
-        httpClient
-      );
-
-      console.log(
-        "Transaction broadcast! Check on explorer:",
-        `https://explorer.hiro.so/txid/${txId}?chain=testnet`
-      );
+      const txId = await callContract({
+        contractAddress: CONTRACTS.BTCUNI_MAIN,
+        contractName: CONTRACT_NAMES.BTCUNI_MAIN,
+        functionName: "enroll-whitelist",
+        functionArgs: [],
+        userAddress,
+      });
 
       setToast({
         type: "success",
@@ -216,7 +172,7 @@ export default function CourseEnrollment({
   };
 
   const handleEnrollCourse = async (courseId: number) => {
-    if (!stxPubKey || !stxAddress || !httpClient) {
+    if (!userAddress) {
       setToast({ type: "error", message: "Wallet not connected" });
       return;
     }
@@ -228,27 +184,18 @@ export default function CourseEnrollment({
 
     setEnrollingCourse(courseId);
     try {
-      console.log("Enrolling course with client-side signing...");
-
-      const txId = await signAndBroadcastContractCall(
-        {
-          contractAddress: CONTRACTS.BTCUNI_MAIN,
-          contractName: "btcuni",
-          functionName: "enroll-course",
-          functionArgs: [uintCV(courseId)],
-          senderAddress: stxAddress,
-          senderPubKey: stxPubKey,
-        },
-        httpClient
-      );
+      const txId = await callContract({
+        contractAddress: CONTRACTS.BTCUNI_MAIN,
+        contractName: CONTRACT_NAMES.BTCUNI_MAIN,
+        functionName: "enroll-course",
+        functionArgs: [uintCV(courseId)],
+        userAddress,
+      });
 
       setToast({
         type: "success",
         message: `Course enrollment successful! Transaction: ${txId}`,
       });
-
-      // Update enrolled courses state immediately
-      console.log("✅ Adding course", courseId, "to enrolled list");
       setEnrolledCourses((prev) => new Set(prev).add(courseId));
       onEnrollmentComplete?.();
     } catch (err) {
@@ -445,32 +392,6 @@ export default function CourseEnrollment({
                 </div>
               </div>
 
-              <div className="bg-gray-50 rounded-lg p-6 space-y-3">
-                <h3 className="font-semibold text-gray-900">Course Content</h3>
-                <ul className="space-y-2 text-gray-700">
-                  <li className="flex items-center gap-2">
-                    <Circle className="w-4 h-4 text-blue-600" />
-                    <span>Introduction and Getting Started</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Circle className="w-4 h-4 text-blue-600" />
-                    <span>Core Concepts and Fundamentals</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Circle className="w-4 h-4 text-blue-600" />
-                    <span>Practical Exercises and Examples</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Circle className="w-4 h-4 text-blue-600" />
-                    <span>Advanced Topics and Best Practices</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Trophy className="w-4 h-4 text-yellow-600" />
-                    <span className="font-semibold">Final Assessment</span>
-                  </li>
-                </ul>
-              </div>
-
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                 <p className="text-sm text-blue-800">
                   💡 Complete all lessons to earn your NFT certificate!
@@ -488,7 +409,6 @@ export default function CourseEnrollment({
               <button
                 className="flex-1 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-semibold transition-all"
                 onClick={() => {
-                  // TODO: Navigate to course content page
                   alert("Course content page coming soon!");
                 }}
               >

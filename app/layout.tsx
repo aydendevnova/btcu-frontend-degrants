@@ -1,9 +1,5 @@
-
 import "./globals.css";
-import {Providers }from "@/app/providers";
-import "@turnkey/react-wallet-kit/styles.css";
-
-
+import { Providers } from "@/app/providers";
 
 export default function RootLayout({
   children,

@@ -3,18 +3,11 @@
 import React from "react";
 
 interface BalanceProps {
-  stxwallet: string;
   stxBalance: bigint;
   sbtcBalance: bigint;
-  loading: boolean;
 }
 
-export default function Balance({
-  stxwallet,
-  stxBalance,
-  sbtcBalance,
-  loading,
-}: BalanceProps) {
+export default function Balance({ stxBalance, sbtcBalance }: BalanceProps) {
   // Convert micro-STX to STX (6 decimals)
   const balanceInStx = Number(stxBalance) / 1_000_000;
 
@@ -26,27 +19,23 @@ export default function Balance({
       <h3 className="text-xl font-semibold text-gray-800 mb-4">
         Wallet Balances
       </h3>
-      {loading ? (
-        <p className="text-gray-600">Loading balances...</p>
-      ) : (
-        <div className="space-y-4">
-          {/* STX Balance */}
-          <div className="flex justify-between items-center">
-            <span className="text-gray-700 font-medium">STX:</span>
-            <span className="text-2xl font-bold text-blue-600">
-              {balanceInStx.toFixed(6)} STX
-            </span>
-          </div>
-
-          {/* sBTC Balance */}
-          <div className="flex justify-between items-center pt-3 border-t border-gray-200">
-            <span className="text-gray-700 font-medium">sBTC:</span>
-            <span className="text-2xl font-bold text-orange-600">
-              {balanceInSbtc.toFixed(8)} sBTC
-            </span>
-          </div>
+      <div className="space-y-4">
+        {/* STX Balance */}
+        <div className="flex justify-between items-center">
+          <span className="text-gray-700 font-medium">STX:</span>
+          <span className="text-2xl font-bold text-blue-600">
+            {balanceInStx.toFixed(6)} STX
+          </span>
         </div>
-      )}
+
+        {/* sBTC Balance */}
+        <div className="flex justify-between items-center pt-3 border-t border-gray-200">
+          <span className="text-gray-700 font-medium">sBTC:</span>
+          <span className="text-2xl font-bold text-orange-600">
+            {balanceInSbtc.toFixed(8)} sBTC
+          </span>
+        </div>
+      </div>
     </section>
   );
 }

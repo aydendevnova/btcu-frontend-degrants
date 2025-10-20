@@ -9,11 +9,10 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@stacks/auth": "^7.2.0",
+    "@stacks/connect": "^8.2.0",
     "@stacks/network": "^7.2.0",
     "@stacks/transactions": "^7.2.0",
-    "@turnkey/react-wallet-kit": "^1.2.0",
-    "@turnkey/sdk-browser": "^5.11.3",
-    "@turnkey/sdk-server": "^4.10.2",
     "dotenv": "^17.2.3",
     "framer-motion": "^12.23.22",
     "lucide-react": "^0.545.0",

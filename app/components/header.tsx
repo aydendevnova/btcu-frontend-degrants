@@ -1,13 +1,13 @@
 "use client";
 
-import React, { MouseEvent } from "react";
-import { useTurnkey } from "@turnkey/react-wallet-kit";
+import React from "react";
+import { useWallet } from "@/app/providers";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { LogOut, RefreshCw } from "lucide-react";
+import { LogOut } from "lucide-react";
 
 export default function Header() {
-  const { refreshWallets, logout } = useTurnkey();
+  const { disconnect, userAddress, isConnected } = useWallet();
   const router = useRouter();
 
   return (
@@ -31,26 +31,24 @@ export default function Header() {
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-3">
+        {isConnected && userAddress && (
+          <div className="flex items-center gap-2 px-4 py-2 bg-green-50 border border-green-200 rounded-lg">
+            <div className="w-2 h-2 bg-green-500 rounded-full" />
+            <span className="text-sm font-mono text-green-900">
+              {userAddress.slice(0, 6)}...{userAddress.slice(-4)}
+            </span>
+          </div>
+        )}
         <button
-          onClick={(e: MouseEvent<HTMLButtonElement>) => {
+          onClick={(e: React.MouseEvent<HTMLButtonElement>) => {
             e.preventDefault();
-            refreshWallets();
-          }}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-        >
-          <RefreshCw className="w-4 h-4" />
-          <span className="hidden sm:inline">Refresh</span>
-        </button>
-        <button
-          onClick={(e: MouseEvent<HTMLButtonElement>) => {
-            e.preventDefault();
-            logout();
+            disconnect();
           }}
           className="flex items-center gap-2 px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
         >
           <LogOut className="w-4 h-4" />
-          <span className="hidden sm:inline">Logout</span>
+          <span className="hidden sm:inline">Disconnect</span>
         </button>
       </div>
     </div>

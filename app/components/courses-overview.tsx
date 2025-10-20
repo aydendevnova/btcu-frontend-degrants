@@ -4,8 +4,13 @@ import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { BookOpen, Award, Users, Zap, ArrowRight } from "lucide-react";
-import { useTurnkey } from "@turnkey/react-wallet-kit";
-import { publicKeyToAddress } from "@stacks/transactions";
+import { useWallet } from "@/app/providers";
+import {
+  readContract,
+  CONTRACTS,
+  CONTRACT_NAMES,
+} from "@/app/lib/stacks-client-utils";
+import { Cl } from "@stacks/transactions";
 
 const COURSES_LIST = [
   {
@@ -52,53 +57,40 @@ const COURSES_LIST = [
 
 export default function CoursesOverview() {
   const router = useRouter();
-  const { wallets, authState } = useTurnkey();
-  const [stxAddress, setStxAddress] = useState("");
+  const { userAddress, isConnected } = useWallet();
   const [enrolledCourses, setEnrolledCourses] = useState<Set<number>>(
     new Set()
   );
   const [loading, setLoading] = useState(false);
 
-  // Get STX wallet address
-  useEffect(() => {
-    if (authState !== "authenticated") return;
-
-    const account = wallets?.[0]?.accounts?.[0];
-    const pubKey = account?.publicKey;
-
-    if (pubKey) {
-      try {
-        const address = publicKeyToAddress(pubKey, "testnet");
-        setStxAddress(address);
-      } catch (err) {
-        console.error(err);
-      }
-    }
-  }, [wallets, authState]);
-
   // Check enrollments
   useEffect(() => {
-    if (!stxAddress) return;
+    if (!userAddress) return;
 
     const checkEnrollments = async () => {
       setLoading(true);
       try {
-        const whitelistRes = await fetch("/api/contract/check-whitelist", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ address: stxAddress }),
+        const whitelistResult = await readContract({
+          contractAddress: CONTRACTS.BTCUNI_MAIN,
+          contractName: CONTRACT_NAMES.BTCUNI_MAIN,
+          functionName: "is-whitelisted-beta",
+          functionArgs: [Cl.principal(userAddress)],
+          senderAddress: userAddress,
         });
-        const whitelistData = await whitelistRes.json();
 
-        if (whitelistData.success && whitelistData.isWhitelisted) {
-          const enrollRes = await fetch("/api/contract/get-enrolled-ids", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ address: stxAddress }),
+        if (whitelistResult?.value === true) {
+          const enrollResult = await readContract({
+            contractAddress: CONTRACTS.BTCUNI_MAIN,
+            contractName: CONTRACT_NAMES.BTCUNI_MAIN,
+            functionName: "get-enrolled-ids",
+            functionArgs: [Cl.principal(userAddress)],
+            senderAddress: userAddress,
           });
-          const enrollData = await enrollRes.json();
-          if (enrollData.success && enrollData.enrolledIds) {
-            setEnrolledCourses(new Set<number>(enrollData.enrolledIds));
+
+          if (enrollResult?.value && Array.isArray(enrollResult.value)) {
+            setEnrolledCourses(
+              new Set<number>(enrollResult.value.map((id: any) => Number(id)))
+            );
           }
         }
       } catch (err) {
@@ -109,7 +101,7 @@ export default function CoursesOverview() {
     };
 
     checkEnrollments();
-  }, [stxAddress]);
+  }, [userAddress]);
 
   const enrolledCoursesList = COURSES_LIST.filter((course) =>
     enrolledCourses.has(course.id)
@@ -259,7 +251,7 @@ export default function CoursesOverview() {
                   whileHover={{ scale: 1.03, y: -5 }}
                   className="bg-white rounded-3xl border-2 border-orange-200 p-6 shadow-lg hover:shadow-2xl hover:shadow-orange-100 transition-all cursor-pointer"
                   onClick={() =>
-                    authState === "authenticated"
+                    isConnected
                       ? router.push(`/course/${course.id}`)
                       : router.push("/dashboard")
                   }
@@ -293,9 +285,7 @@ export default function CoursesOverview() {
             onClick={() => router.push("/dashboard")}
             className="px-12 py-4 bg-gradient-to-r from-orange-500 to-yellow-400 text-white text-lg font-bold rounded-2xl shadow-lg hover:shadow-xl transition-all"
           >
-            {authState === "authenticated"
-              ? "Go to Dashboard 🚀"
-              : "Start Learning Today 🚀"}
+            {isConnected ? "Go to Dashboard 🚀" : "Start Learning Today 🚀"}
           </motion.button>
         </div>
       </div>

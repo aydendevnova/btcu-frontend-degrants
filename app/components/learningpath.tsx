@@ -2,8 +2,8 @@
 import * as React from "react";
 import { motion } from "framer-motion";
 import { CheckCircle, Circle } from "lucide-react";
-import { useTurnkey } from "@turnkey/react-wallet-kit";
 import { useRouter } from "next/navigation";
+import { useWallet } from "@/app/providers";
 
 interface Step {
   title: string;
@@ -14,16 +14,24 @@ interface Step {
 }
 
 export default function LearningPath() {
-  const { wallets, handleLogin } = useTurnkey();
+  const { isConnected, connect } = useWallet();
   const router = useRouter();
+
+  async function handleConnect() {
+    try {
+      await connect();
+    } catch (error) {
+      console.error("Connection failed:", error);
+    }
+  }
 
   const [steps, setSteps] = React.useState<Step[]>([
     {
-      title: "Create Wallet",
+      title: "Connect Wallet",
       description: "Your first step into Bitcoin",
       xp: 100,
       completed: false,
-      action: () => handleLogin(),
+      action: handleConnect,
     },
     {
       title: "Join Whitelist",
@@ -48,14 +56,14 @@ export default function LearningPath() {
     },
   ]);
 
-  // Update wallet creation step
+  // Update wallet connection step
   React.useEffect(() => {
     setSteps((prev) =>
       prev.map((step, i) =>
-        i === 0 ? { ...step, completed: wallets.length > 0 } : step
+        i === 0 ? { ...step, completed: isConnected } : step
       )
     );
-  }, [wallets]);
+  }, [isConnected]);
 
   const handleStepClick = (index: number) => {
     const step = steps[index];
